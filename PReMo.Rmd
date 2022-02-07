@@ -1,0 +1,131 @@
+---
+title: "PReMo"
+output: html_notebook
+---
+
+This notebook implements the model from this paper: [Proprioceptive Re-alignment drives Implicit Sensorimotor Adaptation](https://doi.org/10.1101/2021.12.21.473747)
+
+**Eq. 1** gives the integrated estimate of the hand position:
+
+$x_{p,t}^I = \frac{\sigma_u^2}{\sigma_u^2+\sigma_p^2}x_{p,t} + \frac{\sigma_p^2}{\sigma_u^2+\sigma_p^2}G_t$
+
+```{r}
+F_xI_pt <- function(x_pt, var_u, var_p, Gt) {
+  
+  wx_pt <- (var_u/(var_u+var_p)) * x_pt
+  wGt   <- (var_p/(var_u+var_p)) * Gt
+  
+  return(w_xpt + w_Gt)
+  
+}
+```
+
+**Eq. 2** gives the integrated estimate of the visual hand position:
+
+$x_{v,t}^I = \frac{\sigma_u^2}{\sigma_u^2+\sigma_v^2}x_{p,t} + \frac{\sigma_p^2}{\sigma_u^2+\sigma_v^2}G_t$
+
+```{r}
+F_xI_vt <- function(x_vt, var_u, var_v, var_p, Gt) {
+  
+  Wx_vt <- (var_u/(var_u+var_v)) * x_vt
+  WGt   <- (var_p/(var_u+var_v)) * Gt
+  
+  return(Wx_vt + WGt)
+  
+}
+```
+
+
+**Eq. 3** gives the "intramodel integrated estimate of hand position", recalibrated crossmodally by vision:
+
+$x_{p,t}^{per} = x_{p,t}^I + \beta_p$
+
+Where $\beta_p$ is the proprioceptive shift.
+
+```{r}
+F_xper_pt <- function(xI_pt, beta_p) {
+  
+  return(xI_pt + beta_p)
+  
+}
+```
+
+**Eq. 4** gives the "intramodel integrated estimate of cursor position", recalibrated by proprioception:
+
+$x_{v,t}^{per} = x_{v,t}^I + \beta_v$
+
+Where $\beta_v$ is the visual shift.
+
+```{r}
+F_xper_vt <- function(xI_vt, beta_v) {
+  
+  return(xI_vt + beta_v)
+  
+}
+```
+
+The the visual and proprioceptive shifts are given in equations 5 and 6, where each is first a fixed ratio of the visuo-proprioceptive discrepancy ($x_{v,t}^I - x_{p,t}^I$) depending on which modality is used ($\eta_p, \eta_v$), and for larger rotations, both are capped by some level of saturation ($\beta_{p,sat}, \beta_{v,sat}$):
+
+$\beta_{p,t} = min[\eta_p(x_{v,t}^I - x_{p,t}^I), \beta_{p,sat}]$
+
+$\beta_{v,t} = min[\eta_p(x_{v,t}^I - x_{p,t}^I), \beta_{v,sat}]$
+
+```{r}
+F_beta_pt <- function(eta_p, xI_vt, xIpt, beta_psat) {
+  
+  return( min(eta_p*(xI_vt - xIpt), beta_psat) )
+  
+}
+
+F_beta_vt <- function(eta_v, xI_vt, xIpt, beta_vsat) {
+  
+  return( min(eta_v*(xI_vt - xIpt), beta_vsat) )
+  
+}
+```
+
+Then proprioceptive error is given as the difference between the movement goal and the perceived proprioceptive hand position:
+
+**Eq. 7**:
+
+$PropError = G_t - x_{p,t}^{per}$
+
+```{r}
+F_PropError <- function(G_t, xper_pt) {
+  
+  return(G_t - xper_pt)
+  
+}
+```
+
+In **Eq. 8**, the state space model is updated with a learning rate $K$:
+
+$x_{p,t+1}=x_{p,t}+K(G_t - x_{p,t}^{per})$
+
+And $x_{p,t}$ is used as the _actual_ hand position in Eq 1.
+
+```{r}
+F_x_pt1 <- function(x_pt, K, G_t, xper_pt) {
+  
+  return(x_pt + (K*(G_t - xper_pt)))
+  
+}
+```
+
+**Eq. 9** embodies the key assumption of PReMo that the upper bound of adaptation ($x_p^{UB}$) is reached when there is no more proprioceptive error, that is: when the perceived hand position is the same as the perceived motor goal.
+
+$x_p^{UB} = \frac{-\beta_p(\sigma_u^2 + \sigma_p^2)}{\sigma_u^2}$
+
+```{r}
+F_xUB_p <- function(beta_p, var_u, var_p) {
+  
+  return( (-beta_p(var_u + var_p))/var_u )
+  
+}
+```
+
+**Eq. 10** is actually the same as **Eq. 9** and perhaps neither needs to be incorporated in the model, it seems they roll out of the model instead:
+
+$x_p^{UB} = -\beta_p - \beta_p\frac{\sigma_p^2}{\sigma_u^2}$
+
+Seems to me like the other equations are not part of the model per se, but rather predict upper bounds on some of the stuff happening in the model.
