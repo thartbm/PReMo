@@ -1,11 +1,15 @@
 ---
 title: "PReMo"
-output: html_notebook
+output:
+  word_document: default
+  html_notebook: default
 ---
 
 This notebook implements the model from this paper: [Proprioceptive Re-alignment drives Implicit Sensorimotor Adaptation](https://doi.org/10.1101/2021.12.21.473747)
 
-**Eq. 1** gives the integrated estimate of the hand position:
+# Equations
+
+**Eq. 1** gives the integrated estimate of the felt hand position:
 
 $x_{p,t}^I = \frac{\sigma_u^2}{\sigma_u^2+\sigma_p^2}x_{p,t} + \frac{\sigma_p^2}{\sigma_u^2+\sigma_p^2}G_t$
 
@@ -68,18 +72,18 @@ The the visual and proprioceptive shifts are given in equations 5 and 6, where e
 
 $\beta_{p,t} = min[\eta_p(x_{v,t}^I - x_{p,t}^I), \beta_{p,sat}]$
 
-$\beta_{v,t} = min[\eta_p(x_{v,t}^I - x_{p,t}^I), \beta_{v,sat}]$
+$\beta_{v,t} = min[\eta_v(x_{v,t}^I - x_{p,t}^I), \beta_{v,sat}]$
 
 ```{r}
-F_beta_pt <- function(eta_p, xI_vt, xIpt, beta_psat) {
+F_beta_pt <- function(eta_p, xI_vt, xI_pt, beta_psat) {
   
-  return( min(eta_p*(xI_vt - xIpt), beta_psat) )
+  return( min(eta_p*(xI_vt - xI_pt), beta_psat) )
   
 }
 
-F_beta_vt <- function(eta_v, xI_vt, xIpt, beta_vsat) {
+F_beta_vt <- function(eta_v, xI_vt, xI_pt, beta_vsat) {
   
-  return( min(eta_v*(xI_vt - xIpt), beta_vsat) )
+  return( min(eta_v*(xI_vt - xI_pt), beta_vsat) )
   
 }
 ```
@@ -128,4 +132,136 @@ F_xUB_p <- function(beta_p, var_u, var_p) {
 
 $x_p^{UB} = -\beta_p - \beta_p\frac{\sigma_p^2}{\sigma_u^2}$
 
-Seems to me like the other equations are not part of the model per se, but rather predict upper bounds on some of the stuff happening in the model.
+Seems to me like the other equations are not part of the model per se, but rather predict upper bounds and some other stuff happening in the model.
+
+# Variables
+
+Below is a list of variables and their origin.
+
+All variables with a $t$ subscript vary over trials/time, i.e. they will be changed by the state-space model.
+
+| variable: | meaning: | origin: | JT: |
+| ------- | ------------ | ---------- | --- |
+| $\sigma_u^2$ | uncertainty of (unified) sensory predictions | ? (literature?) | free |
+| $\sigma_p^2$ | proprioceptive uncertainty | literature: ~$8^{\circ}$, see Fig 3 | free |
+| $\sigma_v^2$ | visual uncertainty | ? (literature?) | free |
+| $K$ | learning rate | fit | free |
+| $\eta_p$ | proprioceptive recalibration ratio | fit | free |
+| $\eta_v$ | visual recalibration ratio | fit | free |
+| $\beta_{p,sat}$ | maximum proprioceptive shift | literature: $5^{\circ}$, Ruttle et al., 2021 | free? |
+| $\beta_{v,sat}$ | maximum visual shift | literature: $1^{\circ}$, Tsay et al., 2020 | free? |
+| $\beta_{p,t}$ | proprioceptive shift | Eq. 5 | free |
+| $\beta_{v,t}$ | visual shift | Eq. 6 | free |
+| $x_{p,t}^I$ | integrated proprioceptive estimate of hand position | Eq. 1 | latent |
+| $x_{v,t}^I$ | integrated visual estimate of cursor position | Eq. 2 | latent |
+| $x_{p,t+1}$  | subsequent motor command | Eq. 8 | latent? |
+| $x_{p,t}$ | actual hand position | current reach | output |
+| $x_{v,t}$ | actual cursor position | the current trial's feedback | output |
+| $x_{p,t}^{per}$ | perceived hand position | Eq. 3 | output |
+| $x_{v,t}^{per}$ | perceived cursor position | Eq. 4 | output |
+| $G_t$ | proprioceptive goal | aim? 0 for fully implicit adaptation | ? |
+
+# Model functions
+
+Since some of the parameters could be set from the literature whereas others could be fit, we implement the model with two sets of parameters: `parfree` and `parset` as inputs, so that any fitting algorithm can fit the free parameters and not touch the set parameters. I will keep this a fully implicit model, so that `Gt=0` throughout. It will also need a perturbation schedule:
+
+```{r}
+PReMo_model <- function(parfree, parset, schedule) {
+  
+  # we want all the parameters in 1 vector:
+  p <- c(parfree, parset)
+  
+  # so that we can read them out as variables here:
+  var_u     <- p['var_u']
+  var_p     <- p['var_p']
+  var_v     <- p['var_v']
+  eta_p     <- p['eta_p']
+  eta_v     <- p['eta_v']
+  beta_psat <- p['beta_psat']
+  beta_vsat <- p['beta_vsat']
+  K         <- p['K']
+  
+  # initialize the state:
+  x_pt    <- 0
+  x_vt    <- 0
+  beta_pt <- 0
+  beta_vt <- 0
+  Gt      <- 0 # this will be kept 0, could increase for explicit re-aiming
+  
+  # empty vectors:
+  reach <- c()
+  prop  <- c()
+  
+  for (trial in c(1:length(schedule))) {
+    
+    # Marius' added line:
+    x_vt <- x_pt + schedule[trial]
+    
+    # Eq. 1
+    # integrated proprioceptive position:
+    xI_pt <- ( (var_u/(var_u+var_p)) * x_pt ) + ( (var_p/(var_u+var_p)) * Gt )
+
+    # Eq. 2
+    # integrated visual position:
+    xI_vt <-  ( (var_u/(var_u+var_v)) * x_vt ) + ( (var_p/(var_u+var_v)) * Gt )
+    
+    # Eq. 3
+    # perceived proprioceptive position:
+    xper_pt <- xI_pt + beta_pt
+    
+    # Eq. 4
+    # perceived visual position:
+    xper_vt <- xI_vt + beta_vt
+    
+    # Eq. 5
+    # reported proprioceptive shift:
+    beta_pt <- min(eta_p*(xI_vt - xI_pt), beta_psat)
+    
+    # Eq. 6
+    # reported visual shift:
+    beta_vt <- min(eta_p*(xI_vt - xI_pt), beta_vsat)
+    
+
+    # store stuff in vectors:
+    reach <- c(reach, x_pt)
+    prop  <- c(prop,  beta_pt)
+    
+    
+    # Eq. 8 (and 7)
+    # reach direction on next trial:
+    x_pt <- x_pt + (K*(Gt - xper_pt))
+
+    
+  }
+  
+  return(data.frame(reach, prop))
+
+}
+
+```
+
+Test if this gives any useful output:
+
+```{r}
+  
+setpar <- c('var_u' = 1,
+            'var_p' = 8,
+            'var_v' = 0.5,
+            'beta_psat' = 5,
+            'beta_vsat' = 1)
+  
+freepar <- c('K' = 0.50,
+             'eta_p' = 0.50,
+             'eta_v' = 0.50)
+
+schedule <- c(rep(0,20),rep(30,80))
+
+behavior <- PReMo_model(freepar, setpar, schedule)
+
+plot(-1000,-1000,main='',xlab='',ylab='',xlim=c(0,101), ylim=c(-30,30))
+for (trial in c(20,21,22)) {lines(c(trial,trial),c(-35,35),col='gray')}
+lines(schedule, col='black')
+lines(behavior$reach, col='blue')
+lines(behavior$prop, col='red')
+```
+
