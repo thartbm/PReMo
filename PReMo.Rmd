@@ -390,7 +390,7 @@ PReMo_fit <- function(schedule, reaches=NULL, proprioception=NULL) {
   
   searchgrid <- expand.grid('K'=K, 'eta_p'=eta_p, 'eta_v'=eta_v)
   
-  MSEs <- apply(searchgrid,FUN=PReMo_errors,MARGIN=c(1),schedule=schedule,parset=parset,reaches=reaches,proprioception=proprioception)
+  MSEs <- apply(searchgrid,FUN=PReMo_errors,MARGIN=c(1),parset=parset,schedule=schedule,reaches=reaches,proprioception=proprioception)
   
   topgrid <- searchgrid[order(MSEs)[c(1,2,5,10,20)],]
   
@@ -435,4 +435,4 @@ lines(act_prop, col='blue')
 lines(behavior$reach, col='blue')
 lines(behavior$prop, col='red')
 ```
-
+Wow! That goes exactly the wrong way... as if I've switched some stuff around.
