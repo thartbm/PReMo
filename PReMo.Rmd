@@ -13,32 +13,9 @@ This notebook implements the model from this paper: [Proprioceptive Re-alignment
 
 $x_{p,t}^I = \frac{\sigma_u^2}{\sigma_u^2+\sigma_p^2}x_{p,t} + \frac{\sigma_p^2}{\sigma_u^2+\sigma_p^2}G_t$
 
-```{r}
-F_xI_pt <- function(x_pt, var_u, var_p, Gt) {
-  
-  wx_pt <- (var_u/(var_u+var_p)) * x_pt
-  wGt   <- (var_p/(var_u+var_p)) * Gt
-  
-  return(w_xpt + w_Gt)
-  
-}
-```
-
 **Eq. 2** gives the integrated estimate of the visual hand position:
 
 $x_{v,t}^I = \frac{\sigma_u^2}{\sigma_u^2+\sigma_v^2}x_{p,t} + \frac{\sigma_p^2}{\sigma_u^2+\sigma_v^2}G_t$
-
-```{r}
-F_xI_vt <- function(x_vt, var_u, var_v, var_p, Gt) {
-  
-  Wx_vt <- (var_u/(var_u+var_v)) * x_vt
-  WGt   <- (var_p/(var_u+var_v)) * Gt
-  
-  return(Wx_vt + WGt)
-  
-}
-```
-
 
 **Eq. 3** gives the "intramodel integrated estimate of hand position", recalibrated crossmodally by vision:
 
@@ -46,27 +23,13 @@ $x_{p,t}^{per} = x_{p,t}^I + \beta_p$
 
 Where $\beta_p$ is the proprioceptive shift.
 
-```{r}
-F_xper_pt <- function(xI_pt, beta_p) {
-  
-  return(xI_pt + beta_p)
-  
-}
-```
-
 **Eq. 4** gives the "intramodel integrated estimate of cursor position", recalibrated by proprioception:
 
 $x_{v,t}^{per} = x_{v,t}^I + \beta_v$
 
 Where $\beta_v$ is the visual shift.
 
-```{r}
-F_xper_vt <- function(xI_vt, beta_v) {
-  
-  return(xI_vt + beta_v)
-  
-}
-```
+**Eq. 5 and 6**
 
 The the visual and proprioceptive shifts are given in equations 5 and 6, where each is first a fixed ratio of the visuo-proprioceptive discrepancy ($x_{v,t}^I - x_{p,t}^I$) depending on which modality is used ($\eta_p, \eta_v$), and for larger rotations, both are capped by some level of saturation ($\beta_{p,sat}, \beta_{v,sat}$):
 
@@ -74,33 +37,12 @@ $\beta_{p,t} = min[\eta_p(x_{v,t}^I - x_{p,t}^I), \beta_{p,sat}]$
 
 $\beta_{v,t} = min[\eta_v(x_{v,t}^I - x_{p,t}^I), \beta_{v,sat}]$
 
-```{r}
-F_beta_pt <- function(eta_p, xI_vt, xI_pt, beta_psat) {
-  
-  return( min(eta_p*(xI_vt - xI_pt), beta_psat) )
-  
-}
-
-F_beta_vt <- function(eta_v, xI_vt, xI_pt, beta_vsat) {
-  
-  return( min(eta_v*(xI_vt - xI_pt), beta_vsat) )
-  
-}
-```
-
 Then proprioceptive error is given as the difference between the movement goal and the perceived proprioceptive hand position:
 
 **Eq. 7**:
 
 $PropError = G_t - x_{p,t}^{per}$
 
-```{r}
-F_PropError <- function(G_t, xper_pt) {
-  
-  return(G_t - xper_pt)
-  
-}
-```
 
 In **Eq. 8**, the state space model is updated with a learning rate $K$:
 
@@ -108,31 +50,13 @@ $x_{p,t+1}=x_{p,t}+K(G_t - x_{p,t}^{per})$
 
 And $x_{p,t}$ is used as the _actual_ hand position in Eq 1.
 
-```{r}
-F_x_pt1 <- function(x_pt, K, G_t, xper_pt) {
-  
-  return(x_pt + (K*(G_t - xper_pt)))
-  
-}
-```
+**Eq. 9** 
 
-**Eq. 9** embodies the key assumption of PReMo that the upper bound of adaptation ($x_p^{UB}$) is reached when there is no more proprioceptive error, that is: when the perceived hand position is the same as the perceived motor goal.
+This is not a new rule, but can be derived from the other equations. It embodies the key assumption of PReMo that the upper bound of adaptation ($x_p^{UB}$) is reached when there is no more proprioceptive error, that is: when the perceived hand position is the same as the perceived motor goal.
 
 $x_p^{UB} = \frac{-\beta_p(\sigma_u^2 + \sigma_p^2)}{\sigma_u^2}$
 
-```{r}
-F_xUB_p <- function(beta_p, var_u, var_p) {
-  
-  return( (-beta_p(var_u + var_p))/var_u )
-  
-}
-```
-
-**Eq. 10** is actually the same as **Eq. 9** and perhaps neither needs to be incorporated in the model, it seems they roll out of the model instead:
-
-$x_p^{UB} = -\beta_p - \beta_p\frac{\sigma_p^2}{\sigma_u^2}$
-
-Seems to me like the other equations are not part of the model per se, but rather predict upper bounds and some other stuff happening in the model.
+We have seen that implicit adaptation is correlated with proprioceptive shift, but not adaptation during training, which is what this equation seems to say. 
 
 # Variables
 
@@ -140,114 +64,40 @@ Below is a list of variables and their origin.
 
 All variables with a $t$ subscript vary over trials/time, i.e. they will be changed by the state-space model.
 
-| variable: | meaning: | origin: | JT: |
-| ------- | ------------ | ---------- | --- |
-| $\sigma_u^2$ | uncertainty of (unified) sensory predictions | ? (literature?) | free |
-| $\sigma_p^2$ | proprioceptive uncertainty | literature: ~$8^{\circ}$, see Fig 3 | free |
-| $\sigma_v^2$ | visual uncertainty | ? (literature?) | free |
-| $K$ | learning rate | fit | free |
-| $\eta_p$ | proprioceptive recalibration ratio | fit | free |
-| $\eta_v$ | visual recalibration ratio | fit | free |
-| $\beta_{p,sat}$ | maximum proprioceptive shift | literature: $5^{\circ}$, Ruttle et al., 2021 | free? |
-| $\beta_{v,sat}$ | maximum visual shift | literature: $1^{\circ}$, Tsay et al., 2020 | free? |
-| $\beta_{p,t}$ | proprioceptive shift | Eq. 5 | free |
-| $\beta_{v,t}$ | visual shift | Eq. 6 | free |
-| $x_{p,t}^I$ | integrated proprioceptive estimate of hand position | Eq. 1 | latent |
-| $x_{v,t}^I$ | integrated visual estimate of cursor position | Eq. 2 | latent |
-| $x_{p,t+1}$  | subsequent motor command | Eq. 8 | latent? |
-| $x_{p,t}$ | actual hand position | current reach | output |
-| $x_{v,t}$ | actual cursor position | the current trial's feedback | output |
-| $x_{p,t}^{per}$ | perceived hand position | Eq. 3 | output |
-| $x_{v,t}^{per}$ | perceived cursor position | Eq. 4 | output |
-| $G_t$ | proprioceptive goal | aim? 0 for fully implicit adaptation | ? |
+| variable: | meaning: | origin: |
+| ------- | ------------ | ---------- |
+| $\sigma_u^2$ | uncertainty of (unified) sensory predictions | free |
+| $\sigma_p^2$ | proprioceptive uncertainty | free, maybe ~$8^{\circ}$ in previous data? |
+| $\sigma_v^2$ | visual uncertainty | free |
+| $K$ | learning rate | free |
+| $\eta_p$ | proprioceptive recalibration ratio | free |
+| $\eta_v$ | visual recalibration ratio | free |
+| $\beta_{p,sat}$ | maximum proprioceptive shift | free ($5^{\circ}-10^{\circ}$) |
+| $\beta_{v,sat}$ | maximum visual shift | free, but usually low |
+| $\beta_{p,t}$ | proprioceptive shift | free or proprioceptive data |
+| $\beta_{v,t}$ | visual shift | free (or data?) |
+| $x_{p,t}^I$ | integrated proprioceptive estimate of hand position | Eq. 1: latent |
+| $x_{v,t}^I$ | integrated visual estimate of cursor position | Eq. 2: latent |
+| $x_{p,t+1}$  | next motor command | Eq. 8: latent, or reach data |
+| $x_{p,t}$ | actual hand position, current reach | output or reach data |
+| $x_{v,t}$ | actual cursor position | the current trial's feedback |
+| $x_{p,t}^{per}$ | perceived hand position | Eq. 3 |
+| $x_{v,t}^{per}$ | perceived cursor position | Eq. 4 |
+| $G_t$ | explicit aim | close to 0 in most of our data |
 
 # Model functions
 
-Since some of the parameters could be set from the literature whereas others could be fit, we implement the model with two sets of parameters: `parfree` and `parset` as inputs, so that any fitting algorithm can fit the free parameters and not touch the set parameters. I will keep this a fully implicit model, so that `Gt=0` throughout. It will also need a perturbation schedule:
-
 ```{r}
-PReMo_model <- function(parfree, parset, schedule) {
-  
-  # we want all the parameters in 1 vector:
-  p <- c(parfree, parset)
-  
-  # so that we can read them out as variables here:
-  var_u     <- p['var_u']
-  var_p     <- p['var_p']
-  var_v     <- p['var_v']
-  eta_p     <- p['eta_p']
-  eta_v     <- p['eta_v']
-  beta_psat <- p['beta_psat']
-  beta_vsat <- p['beta_vsat']
-  K         <- p['K']
-  
-  # initialize the state:
-  x_pt    <- 0
-  x_vt    <- 0
-  beta_pt <- 0
-  beta_vt <- 0
-  Gt      <- 0 # this will be kept 0, could increase for explicit re-aiming
-  
-  # empty vectors:
-  reach <- c()
-  prop  <- c()
-  handp <- c()
-  cursp <- c()
-  
-  for (trial in c(1:length(schedule))) {
-    
-    # Marius' added line:
-    if (is.na(schedule[trial])) {
-      x_vt <- Gt + 0 # clamps are NA, and in our data always zero-clamped... need extra functionality
-    } else {
-      x_vt <- x_pt + schedule[trial]
-    }
-    
-    # Eq. 1
-    # integrated proprioceptive position:
-    xI_pt <- ( (var_u/(var_u+var_p)) * x_pt ) + ( (var_p/(var_u+var_p)) * Gt )
-
-    # Eq. 2
-    # integrated visual position:
-    xI_vt <-  ( (var_u/(var_u+var_v)) * x_vt ) + ( (var_p/(var_u+var_v)) * Gt )
-    
-    # Eq. 3
-    # perceived proprioceptive position:
-    xper_pt <- xI_pt + beta_pt
-    
-    # Eq. 4
-    # perceived visual position:
-    xper_vt <- xI_vt + beta_vt
-    
-    # Eq. 5
-    # reported proprioceptive shift:
-    beta_pt <- min(eta_p*(xI_vt - xI_pt), beta_psat)
-    
-    # Eq. 6
-    # reported visual shift:
-    beta_vt <- min(eta_p*(xI_vt - xI_pt), beta_vsat)
-    
-
-    # store stuff in vectors:
-    reach <- c(reach, x_pt)
-    prop  <- c(prop,  beta_pt)
-    
-    handp <- c(handp, xI_pt)
-    cursp <- c(cursp, xI_vt)
-    
-    
-    # Eq. 8 (and 7)
-    # reach direction on next trial:
-    x_pt <- x_pt + (K*(Gt - xper_pt))
-
-    
-  }
-  
-  return(data.frame(reach, prop, handp, cursp))
-
-}
-
+source('R/PReMo.R')
 ```
+
+Since some of the parameters could be set from the literature whereas others could be fit, we implement the model with two sets of parameters: `parfree` and `parset` as inputs, so that any fitting algorithm can fit the free parameters and not touch the set parameters. I will keep this a fully implicit model, so that `Gt=0` throughout. It will also need a perturbation schedule, which may have different trial types, most importantly: clamped or not. So this will be a data frame `schedule` with two columns: `rotation` (in degrees, or at least the same unit as the behavioral data) and `trialtype` with 1=regular, 2=clamped. Maybe more will be added later.
+
+So, we can call the core function this way:
+
+`PReMo_model(parfree, parset, schedule)`
+
+And this returns a data frame with two columns: `reach` and `proprecal` with the same number of rows as `schedule`. They have the predicted reach deviations and proprioceptive recalibration on each trial.
 
 Test if this gives any useful output:
 
@@ -264,88 +114,62 @@ parfree <- c('K'        = 0.50,
              'eta_v'    = 0.50)
 
 # a rotation of 30 degrees introduced on trial 21:
-schedule <- c(rep(0,20),rep(30,80))
+schedule <- data.frame('rotation'=c(rep(0,20),rep(30,80)),
+                       'trialtype'=c(rep(1,100)))
 
-behavior <- PReMo_model(parfree, parset, schedule)
+behavior <- PReMo_model(parfree=parfree, 
+                        parset=parset, 
+                        schedule=schedule)
 
 plot(-1000,-1000,main='',xlab='',ylab='',xlim=c(0,101), ylim=c(-30,30))
 for (trial in c(20,21,22)) {lines(c(trial,trial),c(-35,35),col='gray')}
-lines( schedule, col='black')
-lines(-schedule, col='black')
-lines(behavior$reach, col='blue')
-lines(behavior$prop, col='red')
+lines( schedule$rotation, col='black')
+lines(-schedule$rotation, col='black')
+lines(behavior$reach,     col='blue')
+lines(behavior$proprecal, col='red')
 ```
 
 OK, seems to work... kind of.
 
-```{r}
-PReMo_errors <- function(parfree, parset, schedule, reaches=NULL, proprioception=NULL) {
-  
-  # this will compare model output to reaches, or proprioception, or both
-  # but not neither
-  
-  if (is.null(reaches) & is.null(proprioception)) {
-    return(Inf) # dangerous value (might change later), but model should not be compared to no data at all
-  }
-  # can do more checks, such as that if these variables are not null they are: 
-  # - some kind of numeric vector
-  # - with length equal to schedule
-  
-  # actually, it might be nicer to have all sorts of behavior in a data.frame or matrix
-  # and compare with columns in the behavioral output that have the same name?
-  # not now...
-  
-  # run model with current parameters:
-  behavior <- PReMo_model(parfree, parset, schedule)
-  
-  # collect errors here:
-  errors <- c()
-  
-  if (!is.null(reaches)) {
-    errors <- c(errors, behavior$reach - reaches)
-  }
-  
-  if (!is.null(proprioception)) {
-    errors <- c(errors, behavior$prop - proprioception)
-  }
-  
-  errors <- errors[!is.na(errors)]
-  
-  return(sum(errors^2))
-  
-}
-```
+We now go to the second function, which calculates mean squared errors between the model and the data. It needs the parameters and the schedule, as well as the data. The data is also a data frame, called `dataset`, with at least 1 column. Currently it can have these two: `reach` with reach deviations, and `proprecal` with proprioceptive recalibration. Notice the columns names are exactly the same as the output of the model function. Columns with the same name in each of thse two data frames will be compared. 
 
-Let's see if that kind of works... we need some data first.
+`PReMo_errors(parfree, parset, schedule, dataset)`
 
-Download Jennifer's 2021 data with proprioception:
+To see what that does, we first need some data. Download Jennifer's 2021 data with proprioception:
 
 ```{r}
 active_localizations  <- read.csv(url('https://osf.io/mc523/download'), stringsAsFactors = FALSE)
 active_reaches        <- read.csv(url('https://osf.io/ejxy9/download'), stringsAsFactors = FALSE)
 passive_localizations <- read.csv(url('https://osf.io/9r6gj/download'), stringsAsFactors = FALSE)
 passive_reaches       <- read.csv(url('https://osf.io/mq5av/download'), stringsAsFactors = FALSE)
+
+nocursor_nocursors    <- read.csv(url('https://osf.io/5b8s9/download'), stringsAsFactors = FALSE)
+nocursor_reaches      <- read.csv(url('https://osf.io/vmnx7/download'), stringsAsFactors = FALSE)
 ```
 
 Get group averages:
 
 ```{r}
-
-schedule      <- active_reaches$distortion
+schedule      <- data.frame('rotation'=active_reaches$distortion)
+schedule$trialtype <- 1
 
 act_prop      <- as.numeric( rowMeans( active_localizations[,c(2:33)], na.rm=TRUE ) )
-pas_prop      <- as.numeric( rowMeans( passive_localizations[,c(2:33)], na.rm=TRUE ) )
-
 act_adapt     <- as.numeric( rowMeans( active_reaches[,c(2:33)], na.rm=TRUE) )
+
+active <- data.frame('reachdev'=act_adapt, 'proprecal'=act_prop)
+
+pas_prop      <- as.numeric( rowMeans( passive_localizations[,c(2:33)], na.rm=TRUE ) )
 pas_adapt     <- as.numeric( rowMeans( passive_reaches[,c(2:33)], na.rm=TRUE) )
+
+passive <- data.frame('reachdev'=pas_adapt, 'proprecal'=pas_prop)
 ```
 
 Let's see what kind of data we have here (active group only for now):
 
 ```{r}
-plot(schedule, type='l', main='', xlab='', ylab='', col='black')
-lines(act_adapt, col='red')
-lines(act_prop, col='blue')
+plot(schedule$rotation, type='l', main='', xlab='', ylab='', col='black')
+lines(active$reachdev, col='red')
+lines(active$proprecal, col='blue')
 ```
 Alright, so we could fit the model to this data. Let's first test if the error function is reasonable.
 
@@ -361,121 +185,50 @@ parfree <- c('K'        = 0.50,
              'eta_p'    = 0.50,
              'eta_v'    = 0.50)
 
-reach_MSE <- PReMo_errors(parfree, parset, schedule, reaches=act_adapt)
+reach_MSE <- PReMo_errors(parfree, parset, schedule, dataset=active)
 print(reach_MSE)
 
-prop_MSE <- PReMo_errors(parfree, parset, schedule, proprioception=act_prop)
+prop_MSE <- PReMo_errors(parfree, parset, schedule, dataset=passive)
 print(prop_MSE)
 
-both_MSE <- PReMo_errors(parfree, parset, schedule, reaches=act_adapt, proprioception=act_prop)
-print(both_MSE)
-```
-Looks reasonable, now let's write a fitting function:
-
-```{r}
-library(optimx)
-
-PReMo_fit <- function(schedule, 
-                      reaches=NULL, 
-                      proprioception=NULL, 
-                      parset=c('var_u'     = 1,
-                               'var_p'     = 7,
-                               'var_v'     = 0.1,
-                               'beta_psat' = 5,
-                               'beta_vsat' = 1)) {
-  
-  # parset <- c('var_u'     = 1,
-  #             'var_p'     = 7,
-  #             'var_v'     = 0.1,
-  #             'beta_psat' = 5,
-  #             'beta_vsat' = 1)
-  
-  #parset <- c('beta_pset' = 5)
-  
-  npoints <- 6
-  
-  # start search grid for free parameters:
-  searchseqs <- list()
-  lower <- c()
-  upper <- c()
-  
-  parlimits <- data.frame('parameter'=c('K',  'eta_p', 'eta_v', 'var_u', 'var_p', 'var_v', 'beta_vsat', 'beta_psat'),
-                          'lo'       =c(0.001, 0.001,  0.001,    0.001,    0.001,   0.001,   0.001,       0.001),
-                          'hi'       =c(0.999, 0.999,  0.999,   20,       20,       5,      10,          15))  
-  
-  for (rown in c(1:dim(parlimits)[1])) {
-    if (parlimits$parameter[rown] %in% names(parset)) { next() }
-    lo <- parlimits[rown,'lo']
-    hi <- parlimits[rown,'hi']
-    step <- diff(c(lo,hi))/npoints
-    searchseqs[[parlimits$parameter[rown]]] <- seq(lo+(step/2),hi-(step/2),step)
-    lower <- c(lower, lo)
-    upper <- c(upper, hi)
-  }
-  
-  searchgrid <- expand.grid(searchseqs)
-  
-  if (dim(searchgrid)[1] > 2000) {
-    searchgrid <- searchgrid[sample(c(1:dim(searchgrid)[1]),size=2000),]
-  }
-  
-  MSEs <- apply(searchgrid,FUN=PReMo_errors,MARGIN=c(1),parset=parset,schedule=schedule,reaches=reaches,proprioception=proprioception)
-  
-  topgrid <- searchgrid[order(MSEs)[c(1,2,5,10,20)],]
-  
-  # do fitting on the best results from the search grid:
-  topFits <- do.call("rbind",
-                         apply( topgrid,
-                                MARGIN=c(1),
-                                FUN=optimx::optimx,
-                                fn=PReMo_errors,
-                                method='L-BFGS-B',
-                                lower=lower,
-                                upper=upper,
-                                schedule=schedule,
-                                parset=parset,
-                                reaches=reaches,
-                                proprioception=proprioception) )
-  
-  winFit <- topFits[order(topFits$value)[1],]
-  
-  idx <- which(names(winFit) == 'value') - 1
-
-  winpar <- as.numeric(winFit[c(1:(idx))])
-  names(winpar) <- names(winFit[c(1:(idx))])
-  
-  return(winpar)
-  
-}
 
 ```
+Not sure if that's reasonable: about `sqrt(17700.17)/288 = 0.46` degrees error per trial?
 
+Now we get to the last function, that tries to be smart about minimizing this error by changing parameters. We give this the schedule, the dataset and the parameters we want to set in advance, with their value:
+
+`PReMo_fit(schedule, dataset, parset)`
+
+These parameters can be set:
+
+`K`,  `eta_p`, `eta_v`, `var_u`, `var_p`, `var_v`, `beta_vsat`, `beta_psat`
+
+Which parameters are not set, will be free parameters.
 
 ```{r}
-parset=c('var_p'     = 7,
-         'beta_psat' = 5
+parset=c('var_p'     = 9,
+         'beta_psat' = 9
          )
 
-PReMo_par <- PReMo_fit(schedule=schedule,
-                       reaches=act_adapt, 
-                       proprioception=act_prop,
-                       parset=parset)
+idx <- c(1:length(schedule))
+idx <- c(1:224)
 
+PReMo_par <- PReMo_fit(schedule=schedule[idx,],
+                       dataset=active[idx,], 
+                       parset=parset,
+                       maxgridsize=5000,
+                       gridtop=10)
+PReMo_par
 ```
-
-
-
 Now plot the fit on top of the data.
 
 ```{r}
+behavior <- PReMo_model(parfree=PReMo_par, parset=parset, schedule=schedule[idx,])
 
-behavior <- PReMo_model(parfree=PReMo_par, parset=parset, schedule=schedule)
-
-plot(schedule, type='l', main='', xlab='', ylab='', col='black')
-lines(act_adapt, col='red')
-lines(act_prop, col='blue')
-lines(behavior$reach, col='red')
-lines(behavior$prop, col='blue')
+plot(schedule$rotation[idx], type='l', main='', xlab='', ylab='', col='black', ylim=c(-30,30))
+lines(active$reachdev[idx], col='red')
+lines(active$proprecal[idx], col='blue')
+lines(behavior$reachdev, col='red')
+lines(behavior$proprecal, col='blue')
 ```
-
 
