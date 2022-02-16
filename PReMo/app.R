@@ -20,6 +20,7 @@ ui <- fluidPage(
     tags$a(href="https://doi.org/10.1101/2021.12.21.473747", 
            "Implementation of the model in Tsay et al. (2021; bioRxiv)."),
     p("Currently only implements fully implicit adaptation."),
+    tags$a(href="https://github.com/thartbm/PReMo", "Source code on GitHub."),
     
     # Sidebar with a slider input for number of bins 
     sidebarLayout(
