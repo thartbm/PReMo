@@ -213,8 +213,10 @@ parset=c('var_p'     = 9,
 idx <- c(1:length(schedule))
 idx <- c(1:224)
 
-PReMo_par <- PReMo_fit(schedule=schedule[idx,],
-                       dataset=active[idx,], 
+dataschedule <- cbind(schedule,active)
+dataschedule <- dataschedule[idx,]
+
+PReMo_par <- PReMo_fit(dataschedule=dataschedule,
                        parset=parset,
                        maxgridsize=5000,
                        gridtop=10)

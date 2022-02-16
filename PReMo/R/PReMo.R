@@ -183,3 +183,47 @@ PReMo_fit <- function(dataschedule,
   
 }
 
+PReMo_fastfit <- function(dataschedule, 
+                          settings) {
+  
+  # split dataschedule:
+  dataset  <- dataschedule[,which(names(dataschedule) %in% c('reachdev','proprecal'))]
+  schedule <- dataschedule[,which(names(dataschedule) %in% c('rotation','trialtype'))]
+  
+  # if not set, these are the default limits:
+  parlimits <- data.frame('parameter'=c('K',  'eta_p', 'eta_v', 'var_u', 'var_p', 'var_v', 'beta_vsat', 'beta_psat'),
+                          'lo'       =c(0.001, 0.001,  0.001,    0.001,    0.001,   0.001,   0.001,       0.001    ),
+                          'hi'       =c(0.999, 0.999,  0.999,   20,       20,       5,      10,          15        ))
+  
+  lower   <- c()
+  upper   <- c()
+  parset  <- c()
+  parfree <- c()
+  for (parname in parlimits$parameter) {
+    pl_idx <- which(parlimits$parameter == parname)
+    st_idx <- which(settings$parameter == parname)
+    
+    if (settings$fixed[st_idx] == TRUE) {
+      parset[parname] <- settings$value[st_idx]
+    } else {
+      thispar <- c()
+      thispar[parname] <- settings$value[st_idx]
+      parfree <- c(parfree, thispar)
+      lower <- c(lower, parlimits[pl_idx,'lo'])
+      upper <- c(upper, parlimits[pl_idx,'hi'])
+    }
+    
+  }
+  
+  fit <- optimx::optimx(par=parfree,
+                        fn=PReMo_errors,
+                        method='L-BFGS-B',
+                        lower=lower,
+                        upper=upper,
+                        schedule=schedule,
+                        parset=parset,
+                        dataset=dataset)
+  
+  return(fit)
+  
+}
