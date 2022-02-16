@@ -75,11 +75,15 @@ ui <- fluidPage(
                 column(4,
                        checkboxInput("beta_psat_fixed", "fix beta_psat", value = FALSE),
                 ),
+                column(8,
+                       sliderInput("rotation_slider", "rotation", min = -90.00, max = 90.00, step=1.00, value = -30.0),
+                ),
             ),
             
             actionButton("reset", "Reset", class = "btn-danger", icon=icon("refresh")),
             hr(),
             fileInput("upload", "Upload a schedule and data file", accept = c(".csv", ".tsv")),
+            actionButton("unload", "Unload file", class = "btn-danger", icon=icon("trash")),
             p("File (.csv or .tsv), where rows=trials, 2 columns define the experiment: `rotation` and `trialtype` (1: normal, 2: error-clamped). At least one of two columns: `reachdev` (reach deviations) or `proprecal` (proprioceptive estimates). Measures relative to target in the same unit."),
             actionButton("fit", "Fit model to data", class = "btn-lg btn-success", icon=icon("gears")),
             p("Parameters: free (starting value from sliders), or fixed (when ticked)."),
@@ -140,7 +144,7 @@ server <- function(input, output) {
         )
         
         if (is.null(storage$dataschedule)) {
-            dataschedule <- data.frame('rotation'=c(rep(0,20),rep(-30,80)),
+            dataschedule <- data.frame('rotation'=c(rep(0,20),rep(input$rotation_slider,80)),
                                        'trialtype'=rep(1,100))
         } else {
             dataschedule <- storage$dataschedule
@@ -182,12 +186,16 @@ server <- function(input, output) {
         updateSliderInput(inputId = "beta_psat_slider", value = 5.00)
         updateCheckboxInput(inputId = "beta_psat_fixed", value = FALSE)
     })
+    
+    observeEvent(input$reset, {
+        storage$dataschedule <- NULL
+    })
 
     
     output$fittedDataPlot <- renderPlot({
         
         if (is.null(storage$dataschedule)) {
-            schedule <- data.frame('rotation'=c(rep(0,20),rep(-30,80)),
+            schedule <- data.frame('rotation'=c(rep(0,20),rep(input$rotation_slider,80)),
                                    'trialtype'=rep(1,100))
         } else {
             schedule <- storage$dataschedule[,c('rotation','trialtype')]
@@ -230,6 +238,12 @@ server <- function(input, output) {
         # add model processes:
         lines(modelfit$reachdev,  col='#005de4ff')
         lines(modelfit$proprecal, col='#e51636ff')
+        lines(modelfit$handest,   col='#ff80ceff')
+        
+        legend(0,max(rangevalues),
+               c('adaptation', 'proprioception', 'integrated hand position'),
+               col=c('#005de4ff','#e51636ff','#ff80ceff'),
+               lty=c(1,1,1),bty='n')
         
     })
     

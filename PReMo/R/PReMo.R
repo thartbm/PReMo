@@ -24,6 +24,7 @@ PReMo_model <- function(parfree, parset, schedule) {
   # empty vectors:
   reachdev  <- c()
   proprecal <- c()
+  handest   <- c()
 
   for (trial in c(1:dim(schedule)[1])) {
     
@@ -60,6 +61,7 @@ PReMo_model <- function(parfree, parset, schedule) {
     # store stuff in vectors:
     reachdev  <- c(reachdev,  x_pt)
     proprecal <- c(proprecal, beta_pt)
+    handest   <- c(handest,   xI_pt)
     
     # Eq. 8 (and 7)
     # reach direction on next trial:
@@ -67,7 +69,7 @@ PReMo_model <- function(parfree, parset, schedule) {
     
   }
   
-  return(data.frame(reachdev, proprecal))
+  return(data.frame(reachdev, proprecal, handest))
   
 }
 
