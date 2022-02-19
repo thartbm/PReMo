@@ -81,7 +81,7 @@ ui <- fluidPage(
                 ),
             ),
             
-            actionButton("reset", "Reset", class = "btn-danger", icon=icon("refresh")),
+            actionButton("reset", "Reset", class = "btn-danger", icon=icon("sync")),
             hr(),
             fileInput("upload", "Upload a schedule and data file", accept = c(".csv", ".tsv")),
             actionButton("unload", "Unload file", class = "btn-danger", icon=icon("trash")),
